@@ -39,13 +39,13 @@ class UpstoxMda(Mda):
     @staticmethod
     def convert_bid_ask_to_columns(df):
         for idx in range(0, 5):
-            prefix = 'bid' + str(idx) + '_'
-            df[prefix + 'qty'] = df['bids'][idx]['quantity']
-            df[prefix + 'price'] = df['bids'][idx]['price']
-            df[prefix + str(idx) + '_' 'orders'] = df['bids'][idx]['orders']
+            prefix = 'bid' + str(idx)
+            df[prefix + '_qty'] = df['bids'][idx]['quantity']
+            df[prefix + '_price'] = df['bids'][idx]['price']
+            df[prefix + '_orders'] = df['bids'][idx]['orders']
 
-            prefix = 'ask' + str(idx) + '_'
-            df[prefix + '_' 'qty'] = df['asks'][idx]['quantity']
-            df[prefix + 'price'] = df['asks'][idx]['price']
-            df[prefix + 'orders'] = df['asks'][idx]['orders']
+            prefix = 'ask' + str(idx)
+            df[prefix + '_qty'] = df['asks'][idx]['quantity']
+            df[prefix + '_price'] = df['asks'][idx]['price']
+            df[prefix + '_orders'] = df['asks'][idx]['orders']
         return df
