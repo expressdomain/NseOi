@@ -60,10 +60,10 @@ def quote_message(message):
 def generate(callback):
     symbolLen = len(symbols)
     while True:
-        message['timestamp'] = int(datetime.datetime.now().strftime("%s")) * 1000
+        # message['timestamp'] = int(datetime.datetime.now().strftime("%s")) * 1000
         for idx in range(0, symbolLen):
             # randomIdx = randrange(0, symbolLen)
-            message['symbol'] = symbols[5]
+            message['symbol'] = symbols[idx]
             callback(message)
         time.sleep(1)
 
