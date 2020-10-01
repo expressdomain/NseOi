@@ -14,13 +14,13 @@ class UpstoxMda(Mda):
         self.ApiKey = self.config['Mda-Upstox']['ApiKey']
         self.AccessToken = self.config['Mda-Upstox']['AccessToken']
         self.upstox = Upstox(self.ApiKey, self.AccessToken)
-        self.nse_fo_master = self.upstox.get_master_contract('NSE_FO')
+        self.nse_fo_master = self.upstox.get_master_contract('MCX_FO')
 
     def start(self):
         super().start()
-        subscribe_thread = threading.Thread(target=self.subscribe)
-        subscribe_thread.start()
-
+        # subscribe_thread = threading.Thread(target=self.subscribe)
+        # subscribe_thread.start()
+        self.upstox.subscribe(self.upstox.get_instrument_by_symbol('MCX_FO', 'gold20octfut'), LiveFeedType.Full)
         self.upstox.set_on_quote_update(self.tick)
         # self.subscribe_symbols.apply(lambda symbol: self.upstox.subscribe(
         #     self.upstox.get_instrument_by_symbol('NSE_FO', 'nifty20100110000ce'), LiveFeedType.Full),

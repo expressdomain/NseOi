@@ -11,21 +11,14 @@ class Mda(object):
 
         self.db_type = self.config['Mda']['DbType']
         self.db_path = self.config['Mda']['DbPath']
-        self.subscribe_symbol_table = self.config['Mda']['SubscribeSymbolTable']
 
         if self.db_type == 'mysql':
             self.engine = sqlalchemy.create_engine(self.db_path, echo=False)
         elif self.db_type == 'sqllite':
-            self.engine = sqlalchemy.create_engine(self.db_path, echo=False, poolclass=sqlalchemy.pool.QueuePool)
+            self.engine = sqlalchemy.create_engine(self.db_path, echo=False, poolclass=sqlalchemy.pool.QueuePool,
+                                                   connect_args={"check_same_thread": False})
         else:
             raise str("No db.type specified")
-
-        # try:
-        #     self.subscribe_symbols = pd.read_sql('SELECT * FROM {}'.format(self.subscribe_symbol_table), con=self.engine)
-        # except:
-        #     print('Error while reading subscription db')
-        #     self.subscribe_symbols = pd.DataFrame()
-
 
     def start(self):
         pass
@@ -35,4 +28,3 @@ class Mda(object):
 
     def save(self, symbol, df):
         df.to_sql(symbol, con=self.engine, if_exists='append')
-
