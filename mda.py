@@ -2,13 +2,13 @@ import configparser
 import pandas as pd
 import sqlalchemy
 
+from app import App
 
-class Mda(object):
+
+class Mda(App):
 
     def __init__(self):
-        self.config = configparser.ConfigParser()
-        self.config.read(self.__class__.__name__ + '.ini')
-
+        super().__init__()
         self.db_type = self.config['Mda']['DbType']
         self.db_path = self.config['Mda']['DbPath']
 

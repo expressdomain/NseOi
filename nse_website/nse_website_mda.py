@@ -1,16 +1,16 @@
 import random
 import threading
 import timeit
+
 import pandas as pd
+from loguru import logger
 
 from mda import Mda
-from simulator import data_generator
 from utils.common import stringToDate
 from utils.proxy_request import ProxyRequests
 
 
 class NseWebsiteMda(Mda):
-
     def __init__(self):
         super().__init__()
         self.proxyRequest = ProxyRequests()
@@ -19,21 +19,15 @@ class NseWebsiteMda(Mda):
         self.expiryList = self.config['Mda-NseWebsite']['ExpiryList'].split(',')
 
     def start(self):
-        t1 = threading.Thread(target=self.schedule_query, args=(
-            self.query_delay, 'fut', 'https://www.nseindia.com/api/liveEquity-derivatives?index=nse50_fut'))
-        t1.start()
-        t2 = threading.Thread(target=self.schedule_query, args=(
-            self.query_delay, 'fut', 'https://www.nseindia.com/api/liveEquity-derivatives?index=nifty_bank_fut'))
-        t2.start()
-        t3 = threading.Thread(target=self.schedule_query,
-                              args=(self.query_delay, 'opt',
-                                    'https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY'))
-        t3.start()
+        self.schedule_query(self.query_delay, 'fut',
+                            'https://www.nseindia.com/api/liveEquity-derivatives?index=nse50_fut')
+        self.schedule_query(self.query_delay, 'fut',
+                            'https://www.nseindia.com/api/liveEquity-derivatives?index=nifty_bank_fut')
+        self.schedule_query(self.query_delay, 'opt',
+                            'https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY')
+        self.schedule_query(self.query_delay, 'opt',
+                            'https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY')
 
-        t4 = threading.Thread(target=self.schedule_query,
-                              args=(self.query_delay, 'opt',
-                                    'https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY'))
-        t4.start()
 
     def tick(self, data):
         pass
@@ -46,7 +40,7 @@ class NseWebsiteMda(Mda):
             self.save(row['identifier'][:-6], row_df)
 
         try:
-            print("Querying " + url)
+            self.logger.debug("Querying " + url)
             response = self.proxyRequest.get(url)
             resJson = response.json()
             timeStamp = stringToDate(resJson['timestamp'], '%d-%b-%Y %H:%M:%S')
@@ -56,8 +50,8 @@ class NseWebsiteMda(Mda):
             df = df.drop(['meta.data', 'meta.msg'], axis=1)
             df.apply(save_row, axis=1)
         except Exception as e:
-            print(str(e))
-            pass
+            response = self.proxyRequest.get("https://www.nseindia.com")
+            self.logger.critical("Exception: " + str(e))
 
     def query_opt_data(self, url):
         def save_row(row):
@@ -69,7 +63,7 @@ class NseWebsiteMda(Mda):
             self.save(row['identifier'][:-3], row_df)
 
         try:
-            print("Querying " + url)
+            self.logger.debug("Querying " + url)
             response = self.proxyRequest.get(url)
             resJson = response.json()
             timeStamp = stringToDate(resJson['records']['timestamp'], '%d-%b-%Y %H:%M:%S')
@@ -88,14 +82,14 @@ class NseWebsiteMda(Mda):
 
             stop = timeit.default_timer()
             execution_time = stop - start
-            print('Program Executed in ' + str(execution_time))
+            self.logger.debug('Option chain write finished in {} secs'.format(str(execution_time)))
         except Exception as e:
-            print(str(e))
-            pass
+            response = self.proxyRequest.get("https://www.nseindia.com")
+            self.logger.critical("Exception: " + str(e))
 
     def schedule_query(self, duration, instrument_type, url):
         random_duration = random.randint(duration, duration + 10)
-        print("delay = {}".format(random_duration))
+        self.logger.debug("delay = {}".format(random_duration))
         if instrument_type == 'fut':
             self.query_fut_data(url)
         elif instrument_type == 'opt':
