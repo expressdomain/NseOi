@@ -5,15 +5,11 @@ import requests
 
 class ProxyRequests:
     proxy_list = [
-        'socks5://rushikesh.talokar@gmail.com:Rushi_123@in-ban.pvdata.host:1080',
-        'socks5://rushikesh.talokar@gmail.com:Rushi_123@in-mum.pvdata.host:1080',
-        'socks5://rushikesh.talokar@gmail.com:Rushi_123@us-nyc4.pvdata.host:1080',
+
     ]
 
     proxy_list_http = [
-        'http://rushikesh.talokar@gmail.com:Rushi_123@in-ban.pvdata.host:8080',
-        'http://rushikesh.talokar@gmail.com:Rushi_123@in-mum.pvdata.host:8080',
-        'http://rushikesh.talokar@gmail.com:Rushi_123@us-nyc4.pvdata.host:8080',
+
     ]
 
 
