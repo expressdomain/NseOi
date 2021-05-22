@@ -1,0 +1,23 @@
+import numpy as np
+import sqlalchemy
+
+
+def get_symbol_list():
+    return ['NIFTY', 'BANKNIFTY']
+
+
+def get_expiry_list():
+    return ['26-11-2020', '03-12-2020', '10-12-2020', '17-12-2020', '24-12-2020', '31-12-2020']
+
+
+def get_strike_list(symbol):
+    if symbol == 'NIFTY':
+        return np.arange(12000, 15000, 50)
+    elif symbol == 'BANKNIFTY':
+        return np.arange(26000, 35000, 100)
+    else:
+        return None
+
+
+def get_timeframe_list():
+    return np.arange(5, 65, 5)

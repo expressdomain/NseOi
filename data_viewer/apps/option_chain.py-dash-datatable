@@ -1,0 +1,370 @@
+import datetime
+import timeit
+from datetime import date
+
+import matplotlib
+import sqlalchemy
+
+import pandas as pd
+
+import dash
+import dash_table
+import dash_bootstrap_components as dbc
+import dash_core_components as dcc
+import dash_html_components as html
+from dash.dependencies import Input, Output, State, ALL, MATCH
+import plotly.graph_objs as go
+
+from app import App
+from data_viewer import common, oi
+import configparser
+
+
+class OptionChain:
+    def __init__(self, config: configparser.ConfigParser, app: dash.Dash):
+        self.app = app
+        self.config = config
+
+        self.db_type = self.config['App']['DbType']
+        self.db_path = self.config['App']['DbPath']
+
+        if self.db_type == 'mysql':
+            self.engine = sqlalchemy.create_engine(self.db_path, echo=False)
+        elif self.db_type == 'sqllite':
+            self.engine = sqlalchemy.create_engine(self.db_path, echo=False, poolclass=sqlalchemy.pool.QueuePool,
+                                                   connect_args={"check_same_thread": False})
+        else:
+            raise str("No db.type specified")
+
+        self.timeframe_list = common.get_timeframe_list()
+        self.expiry_list = common.get_expiry_list()
+
+        self.symbol_list = common.get_symbol_list()
+        self.selected_symbol = self.symbol_list[0]
+        self.strike_list = common.get_strike_list(self.selected_symbol)
+        self.default_strike = {'NIFTY': 11900, 'BANKNIFTY': 24000}
+
+        self.layout = None
+        self.build_layout()
+        self.register_callbacks(app)
+
+    def get_layout(self):
+        return self.layout
+
+    def build_layout(self):
+        self.layout = html.Div(
+            style={
+                'padding': 20
+            },
+            children=[
+                dbc.Row(
+                    children=[
+                        dbc.Col(
+                            children=[
+                                dbc.Row(
+                                    children=[
+                                        dbc.Col(dcc.Dropdown(
+                                            id='symbol',
+                                            options=[
+                                                {'label': item, 'value': item} for item in self.symbol_list
+                                            ],
+                                            value=self.symbol_list[0],
+                                        ), width=3),
+                                        dbc.Col(dcc.Dropdown(
+                                            id='expiry',
+                                            options=[
+                                                {'label': item, 'value': item} for item in self.expiry_list
+                                            ],
+                                            value=self.expiry_list[0],
+                                        ), width=3),
+                                        dbc.Col(html.Button(id='submit-button-state', n_clicks=0, children='Submit'),
+                                                width=2),
+                                    ]
+                                ),
+                                dcc.Textarea(id='textarea-example-output', value='initial value'),
+                                dbc.Row(id='table-row',
+                                        children=[])
+                                # dbc.Row(
+                                #     children=[dash_table.DataTable(
+                                #         id='datatable-option-chain',
+                                #         columns=[
+                                #             {"name": i, "id": i} for i in
+                                #             ['CE_OI', 'CE_OI_CHG', 'CE_IV', 'CE_vol',
+                                #              'strike',
+                                #              'PE_vol', 'PE_IV', 'PE_OI_CHG', 'PE_OI']
+                                #         ],
+                                #         style_cell={'textAlign': 'center', 'fontSize': 10},
+                                #         # row_selectable='single',
+                                #         style_table={
+                                #             'padding': 20,
+                                #             'height': 850,
+                                #             'overflowY': 'scroll',
+                                #             'overflowX': 'hidden'
+                                #         },
+                                #         css=[{'selector': '.dash-spreadsheet tr', 'rule': 'height: 9px;'}],
+                                #
+                                #     )])
+                                # html.Br(),
+
+                            ]
+                            , width=6),
+                        dbc.Col(
+                            children=[
+
+                            ], width=6)]),
+
+            ], )
+
+    def register_callbacks(self, app: dash.Dash):
+        def data_bars_diverging(df, column, color_above='#3D9970', color_below='#FF4136'):
+            n_bins = 100
+            bounds = [i * (1.0 / n_bins) for i in range(n_bins + 1)]
+            col_max = df[column].max()
+            col_min = df[column].min()
+            ranges = [
+                ((col_max - col_min) * i) + col_min
+                for i in bounds
+            ]
+            midpoint = (col_max + col_min) / 2.
+
+            styles = []
+            for i in range(1, len(bounds)):
+                min_bound = ranges[i - 1]
+                max_bound = ranges[i]
+                min_bound_percentage = bounds[i - 1] * 100
+                max_bound_percentage = bounds[i] * 100
+
+                style = {
+                    'if': {
+                        'filter_query': (
+                                '{{{column}}} >= {min_bound}' +
+                                (' && {{{column}}} < {max_bound}' if (i < len(bounds) - 1) else '')
+                        ).format(column=column, min_bound=min_bound, max_bound=max_bound),
+                        'column_id': column
+                    },
+                    'paddingBottom': 2,
+                    'paddingTop': 2
+                }
+                if max_bound > midpoint:
+                    background = (
+                        """
+                            linear-gradient(90deg,
+                            white 0%,
+                            white 50%,
+                            {color_above} 50%,
+                            {color_above} {max_bound_percentage}%,
+                            white {max_bound_percentage}%,
+                            white 100%)
+                        """.format(
+                            max_bound_percentage=max_bound_percentage,
+                            color_above=color_above
+                        )
+                    )
+                else:
+                    background = (
+                        """
+                            linear-gradient(90deg,
+                            white 0%,
+                            white {min_bound_percentage}%,
+                            {color_below} {min_bound_percentage}%,
+                            {color_below} 50%,
+                            white 50%,
+                            white 100%)
+                        """.format(
+                            min_bound_percentage=min_bound_percentage,
+                            color_below=color_below
+                        )
+                    )
+                style['background'] = background
+                styles.append(style)
+
+            return styles
+
+        def data_bars(df, option_type, underlying_value, column):
+            rotation = 90 if option_type == 'CE' else 270
+
+            n_bins = 100
+            bounds = [i * (1.0 / n_bins) for i in range(n_bins + 1)]
+            ranges = [
+                ((df[column].max() - df[column].min()) * i) + df[column].min()
+                for i in bounds
+            ]
+            styles = []
+            for i in range(1, len(bounds)):
+                min_bound = ranges[i - 1]
+                max_bound = ranges[i]
+                max_bound_percentage = bounds[i] * 100
+                styles.append({
+                    'if': {
+                        'filter_query': (
+                                '{{{column}}} >= {min_bound}' +
+                                (' && {{{column}}} < {max_bound}' if (i < len(bounds) - 1) else '')
+                        ).format(column=column, min_bound=min_bound, max_bound=max_bound),
+                        'column_id': column
+                    },
+                    'background': (
+                        """
+                            linear-gradient({rotation}deg,
+                            #0091ea 0%,
+                            #0091ea {max_bound_percentage}%,
+                            #00000000 {max_bound_percentage}%,
+                            #00000000 100%)
+                        """.format(rotation=rotation, max_bound_percentage=max_bound_percentage)
+                    ),
+                    'paddingBottom': 2,
+                    'paddingTop': 2,
+                    'width': '250px'
+                })
+
+            return styles
+
+        def gradient_color(df, column):
+            import seaborn as sns
+            import seaborn as sns
+            import matplotlib.cm as cm
+            from matplotlib.colors import Normalize
+            # colors = pd.Series(data=sns.diverging_palette(h_neg=10, h_pos=251, s=64, l=48,
+            #                                               sep=26, n=len(df)), index=df[column])
+            # colors = colors.apply(matplotlib.colors.to_hex)
+
+            cmap = sns.color_palette('RdYlGn', as_cmap=True)
+            hm = sns.heatmap(df[[column]], cmap=cmap)
+
+            # Normalize data
+            norm = Normalize(vmin=df[column].min(), vmax=df[column].max())
+            colors = cmap(norm(df[column]))
+            # colors = pd.Series(data=colors, index=df[column])
+            # colors = pd.Series(colors)
+            colors = [matplotlib.colors.rgb2hex(color) for color in colors]
+            # colors = colors.apply(matplotlib.colors.to_hex)
+
+            style_data_conditional = [{
+                'if': {
+                    'row_index': idx,
+                    'column_id': column,
+                    # 'filter_query': '{} eq "{}"'.format('{' + column + '}', myid)
+                },
+                'backgroundColor': color,
+                'color': 'black'
+            } for idx, color in enumerate(colors)]
+
+            return style_data_conditional
+
+        def cell_color(df, option_type, underlying_value):
+            column_list = ['CE_OI', 'CE_IV', 'CE_vol', 'CE_OI_CHG'] if option_type == 'CE' \
+                else ['PE_OI', 'PE_IV', 'PE_vol', 'PE_OI_CHG']
+
+            return [
+                {
+                    'if': {
+                        'column_id': cell_text,
+                        'filter_query': '{{strike}} {} {}'.format('>' if option_type == 'CE' else '<',
+                                                                  underlying_value),
+                    },
+                    'backgroundColor': '#ffecb3',
+                    'color': 'black',
+                    'textAlign': 'center'
+                } for cell_text in column_list
+            ]
+
+        @app.callback(
+            [Output('textarea-example-output', 'value'),
+                # Output({'type': 'table-btn', 'index': MATCH}, 'value')
+             ],
+            [Input({'type': 'table-btn', 'index': ALL}, 'n_clicks')],
+            # [State({'type': 'table-btn', 'index': MATCH}, 'id')]
+        )
+        def display_output(values):
+            ctx = dash.callback_context
+
+            if ctx.triggered:
+                button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+                return [str(button_id)]
+                # print(button_id)
+            return ['ss']
+
+        @app.callback(
+            # Output('datatable-option-chain', 'data'),
+            [Output('table-row', 'children'),
+             # Output('datatable-option-chain', 'data'),
+             # Output('datatable-option-chain', 'style_data_conditional')
+             ],
+            [Input('submit-button-state', 'n_clicks')],
+            [State('symbol', 'value'),
+             State('expiry', 'value'),
+             State('table-row', 'children')])
+        def update_option_chain(n_clicks, symbol, expiry, table_row):
+            # print('option_chain')
+            self.selected_symbol = symbol
+            self.strike_list = common.get_strike_list(symbol)
+
+            # option_oi_data = oi.get_option_oi_buildup_range(symbol, expiry, strike, timeframe, 100)
+            start = timeit.default_timer()
+            # option_chain = self.get_option_chain(symbol, expiry)
+            # option_chain.to_csv('/mnt/hgfs/win-d/work/stock_market/data_viewer/apps/test_data/option_chain.csv')
+            option_chain = pd.read_csv('/mnt/hgfs/win-d/work/stock_market/data_viewer/apps/test_data/option_chain.csv')
+            stop = timeit.default_timer()
+            execution_time = stop - start
+
+            print("Time taken to build option chain: {}".format(execution_time))
+
+            underlying_value = option_chain.iloc[0]['CE_underlyingValue']
+
+            style_data_conditional = data_bars(option_chain, 'CE', underlying_value, 'CE_OI') + \
+                                     data_bars(option_chain, 'PE', underlying_value, 'PE_OI') + \
+                                     cell_color(option_chain, 'CE', underlying_value) + \
+                                     cell_color(option_chain, 'PE', underlying_value) + \
+                                     gradient_color(option_chain, 'CE_OI_CHG') + \
+                                     gradient_color(option_chain, 'PE_OI_CHG')
+
+            # return option_chain.to_dict('records'), style_data_conditional
+            option_chain = option_chain[['CE_OI', 'CE_OI_CHG', 'CE_IV', 'CE_vol',
+                                             'strike',
+                                             'PE_vol', 'PE_IV', 'PE_OI_CHG', 'PE_OI']]
+            table = self.generate_table(option_chain)
+            table.children[1].children[0].children[0].style = {'background-color': '#bde9ba'}
+            table_row = [table]
+            return table_row
+
+    def generate_table(self, df, max_rows=10):
+
+        return dbc.Table.from_dataframe(df, striped=True, bordered=True, hover=True)
+
+        return html.Table([
+            html.Thead(
+                html.Tr([html.Th('btn')] + [html.Th(col) for col in df.columns])
+            ),
+            html.Tbody([
+                html.Tr([html.Td(html.Button('Submit', id={'type': 'table-btn', 'index': i}, n_clicks=i))] + [
+                    html.Td(df.iloc[i][col]) for col in df.columns
+                ]) for i in range(min(len(df), max_rows))
+            ])
+        ])
+
+    def get_option_chain(self, symbol, expiry):
+        def get_row(symbol, expiry, option_type, strike):
+            table_name = 'OPTIDX{}{}{}{}'.format(symbol, expiry, option_type, strike)
+            df = pd.read_sql("SELECT * FROM '{}' ORDER BY rowid DESC LIMIT 1;".format(table_name), con=self.engine)
+            df.rename({"openInterest": "OI", 'lastPrice': 'LP', 'totalTradedVolume': 'vol', 'impliedVolatility': 'IV',
+                       'changeinOpenInterest': 'OI_CHG'},
+                      axis='columns', inplace=True)
+            df = df.add_prefix(option_type + '_')
+            return df
+
+        option_chain = pd.DataFrame()
+
+        for strike in self.strike_list:
+            try:
+                ce_df = get_row(symbol, expiry, 'CE', strike)
+                pe_df = get_row(symbol, expiry, 'PE', strike)
+                ce_df['strike'] = strike
+                row = pd.concat([ce_df, pe_df], axis=1, sort=False)
+                option_chain = option_chain.append(row)
+            except Exception as e:
+                print(e)
+                pass
+
+        underlying_value = option_chain.iloc[0]['CE_underlyingValue']
+        option_chain = option_chain[(option_chain['strike'] >= (underlying_value - 900)) & (
+                option_chain['strike'] <= (underlying_value + 900))]
+        return option_chain

@@ -1,11 +1,11 @@
 import timeit
 import pandas as pd
 
-from mda import Mda
+from mdc import Mdc
 from simulator import data_generator
 
 
-class SimulatorMda(Mda):
+class SimulatorMdc(Mdc):
 
     def __init__(self):
         super().__init__()
@@ -39,5 +39,5 @@ class SimulatorMda(Mda):
         return df
 
 
-simulator_mda = SimulatorMda()
-simulator_mda.start()
+simulator_mdc = SimulatorMdc()
+simulator_mdc.start()
