@@ -2,24 +2,26 @@ import time
 import timeit
 import pandas as pd
 import threading
+from loguru import logger
 from upstox_api.api import *
 
-from mda import Mda
+from market_data.mdc import Mdc
 
 
-class UpstoxMda(Mda):
+class UpstoxMdc(Mdc):
 
     def __init__(self):
         super().__init__()
-        self.ApiKey = self.config['Mda-Upstox']['ApiKey']
-        self.AccessToken = self.config['Mda-Upstox']['AccessToken']
+        self.ApiKey = self.config['Mdc-Upstox']['ApiKey']
+        self.AccessToken = self.config['Mdc-Upstox']['AccessToken']
         self.upstox = Upstox(self.ApiKey, self.AccessToken)
+        self.upstox.get_master_contract('NSE_FO')
         self.logger.info("Application initialized")
 
     def start(self):
         super().start()
-        subscribe_thread = threading.Thread(target=self.subscribe)
-        subscribe_thread.start()
+        # subscribe_thread = threading.Thread(target=self.subscribe)
+        # subscribe_thread.start()
 
         # self.upstox.subscribe(self.upstox.get_instrument_by_symbol('MCX_FO', 'gold20octfut'), LiveFeedType.Full)
         self.upstox.set_on_quote_update(self.tick)
@@ -31,8 +33,8 @@ class UpstoxMda(Mda):
         condition.wait()
 
     def tick(self, data):
-        # print(data)
-        # return
+        print(data)
+        return
         start = timeit.default_timer()
         df = pd.json_normalize(data)
         df = df.apply(self.convert_bid_ask_to_columns, axis=1)
@@ -43,13 +45,12 @@ class UpstoxMda(Mda):
         self.logger.debug("Write Time: {}".format(execution_time))
 
     def subscribe(self):
-        self.upstox.get_master_contract('NSE_FO')
-        subscription_list = pd.read_csv(self.config['Mda-Upstox']['SubscriptionFile'])
+        subscription_list = pd.read_csv(self.config['Mdc-Upstox']['SubscriptionFile'])
         for index, row in subscription_list.iterrows():
             status = self.upstox.subscribe(self.upstox.get_instrument_by_symbol(row['exchange'], row['symbol']),
                                            LiveFeedType.Full)
             self.logger.debug("subscribe: {}".format(status))
-            time.sleep(self.config.getfloat('Mda-Upstox', 'SubscriptionDelay'))
+            time.sleep(self.config.getfloat('Mdc-Upstox', 'SubscriptionDelay'))
 
     @staticmethod
     def convert_bid_ask_to_columns(df):
@@ -66,5 +67,5 @@ class UpstoxMda(Mda):
         return df
 
 
-upstox_mda = UpstoxMda()
-upstox_mda.start()
+upstox_mdc = UpstoxMdc()
+upstox_mdc.start()
